@@ -2,6 +2,8 @@
 
 Generate maps for conversions from spherical to equirectangular video in [ffmpeg](http://ffmpeg.org).
 
+Works for videos which represent a half sphere - tested with [360fly](www.360fly.com).
+
 Adapted from the example given for ffmpeg's [`RemapFilter`](https://trac.ffmpeg.org/wiki/RemapFilter).
 
 ## Guide
@@ -30,8 +32,8 @@ $ ffmpeg -i example.jpg -i example_x.pgm -i example_y.pgm -lavfi remap result.pn
 
 **Example spherical image**
 
-![Example](https://raw.githubusercontent.com/prouast/360fly-remap/master/example.jpg?style=centerme)
+![Example](https://github.com/prouast/equirectangular-remap/blob/master/example.jpg?style=centerme)
 
 **Equirectangular result**
 
-![Result](https://raw.githubusercontent.com/prouast/360fly-remap/master/example.jpg?style=centerme)
+![Result](https://github.com/prouast/equirectangular-remap/blob/master/result.png?style=centerme)
