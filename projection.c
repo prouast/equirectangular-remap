@@ -7,7 +7,17 @@
 
 /* Compile with: gcc projection.c -Wall -o project -lm
  *     math.h does not like to be linked directly...
- * Example call: ./project -x front_kodak_sp360_1440_xmap.pgm -y front_kodak_sp360_1440_ymap.pgm -h 1440 -w 1440 -r 1440 -c 1440 -m front --verbose
+ * Example call: ./project -x test_x.pgm -y test_y.pgm -h 400 -w 400 -r 400 -c 400 -m equirectangular --verbose
+ *				 ./project -x fly360_x.pgm -y fly360_y.pgm -h 1504 -w 1504 -r 752 -c 1504 -m equirectangular --verbose
+ * Example command: ffmpeg -i input.jpg -i test_x.pgm -i test_y.pgm -lavfi remap out.png
+ *					ffmpeg -i fly360.mp4 -i fly360_x.pgm -i fly360_y.pgm -lavfi remap out.mp4
+ *
+ * # Sources
+ * - https://trac.ffmpeg.org/wiki/RemapFilter
+ * - https://en.wikipedia.org/wiki/Spherical_coordinate_system
+ * - https://en.wikipedia.org/wiki/Stereographic_projection
+ * - https://en.wikipedia.org/wiki/Equirectangular_projection
+ * - http://paulbourke.net/geometry/transformationprojection/
  */
 
 /* Flag set by ‘--verbose’. */
@@ -24,14 +34,20 @@ typedef struct double3 {
     double z;
 } double3;
 
+typedef struct polar2 {
+	double r;
+	double theta;
+} polar2;
+
+typedef struct polar3 {
+	double r;
+	double theta;
+	double phi;
+} polar3;
+
 enum CameraMode {
     FRONT,
-    FRONT235,
-    BACK,
-    UP,
-    DOWN,
-    SAMSUNG_GEAR_360,
-    THETAS
+    EQUIRECTANGULAR
 };
 
 typedef struct configuration {
@@ -41,8 +57,8 @@ typedef struct configuration {
     int ymap_set;
     int rows; // target
     int cols; // target
-    int height; //source
-    int width; //source
+    int height; // source
+    int width; // source
     int rows_set;
     int cols_set;
     int height_set;
@@ -83,10 +99,10 @@ configuration parse_options(int argc, char **argv) {
           	/* options with arg*/
           	{"xmap",    required_argument, 0, 'x'},
           	{"ymap",    required_argument, 0, 'y'},
-          	{"rows",    required_argument, 0, 'r'}, //target
-          	{"cols",    required_argument, 0, 'c'}, //target
-          	{"height",  required_argument, 0, 'h'}, //source
-          	{"width",   required_argument, 0, 'w'}, //source
+          	{"rows",    required_argument, 0, 'r'}, // target
+          	{"cols",    required_argument, 0, 'c'}, // target
+          	{"height",  required_argument, 0, 'h'}, // source
+          	{"width",   required_argument, 0, 'w'}, // source
           	{"mode",    required_argument, 0, 'm'},
           	{"crop",    required_argument, 0, 'b'},
 
@@ -152,16 +168,10 @@ configuration parse_options(int argc, char **argv) {
         	case 'm':
           		if (strcmp(optarg, "front") == 0) {
             		po.mode = FRONT;
-          		} else if (strcmp(optarg, "front235") == 0) {
-            		po.mode = FRONT235;
-          		} else if (strcmp(optarg, "down") == 0) {
-            		po.mode = DOWN;
-          		} else if (strcmp(optarg, "samsung_gear_360") == 0) {
-            		po.mode = SAMSUNG_GEAR_360;
-            	} else if (strcmp(optarg, "thetas") == 0) {
-        			po.mode = THETAS;
+        		} else if (strcmp(optarg, "equirectangular") == 0) {
+        			po.mode = EQUIRECTANGULAR;
           		} else /* default: */ {
-             		printf("Camera mode %s not implemented \n",optarg); exit(1);
+             		printf("Mode %s not implemented \n",optarg); exit(1);
           		}
           		break;
 
@@ -184,12 +194,9 @@ configuration parse_options(int argc, char **argv) {
        we report the final status resulting from them. */
   	if (verbose_flag) {
 		switch(po.mode) {
-      		case FRONT:				printf("Camera: Front proj\n"); break;
-      		case FRONT235:			printf("Camera: Front 235 proj\n"); break;
-      		case DOWN:				printf("Camera: Down proj\n"); break;
-      		case SAMSUNG_GEAR_360: 	printf("Camera: samsung_gear_360\n"); break;
-      		case THETAS:			printf("Camera: Theta S\n"); break;
-      		default: 				printf("Camera mode not in verbose, exiting\n"); exit(1);
+      		case FRONT:				printf("Mode: Front proj\n"); break;
+      		case EQUIRECTANGULAR:	printf("Mode: Equirectangular proj\n"); break;
+      		default: 				printf("Mode not in verbose, exiting\n"); exit(1);
     	}
   	}
   	
@@ -266,8 +273,7 @@ int pgmWrite_ASCII(char* filename, int rows, int cols, int **image, char* commen
  * first coordinate system, then those to the second shown spherical coordinate system, 
  * then those to the polar projection and then pass the polar system to cardinal x’,y’.
  */
-double2 evaluatePixel_Front(double2 outCoord, double2 srcSize) {
-	double2 o;
+double2 evaluatePixel_Front(double2 outPos, double2 srcSize) {
 	double theta, phi;
 	double3 sphericCoords;
 	double phi2_over_pi;
@@ -275,10 +281,8 @@ double2 evaluatePixel_Front(double2 outCoord, double2 srcSize) {
 	double2 inCentered;
 
 	// Convert outcoords to radians (180 = pi, so half a sphere)
-    o.x = outCoord.x / srcSize.x; 
-    o.y = outCoord.y / srcSize.y; 
-    theta = (1.0 - o.x) * M_PI; 
-    phi = o.y * M_PI;
+    theta = (1.0 - outPos.x) * M_PI; 
+    phi = outPos.y * M_PI;
 
 	// Convert outcoords to spherical (x,y,z on unisphere)
     sphericCoords.x = cos(theta) * sin(phi);
@@ -295,26 +299,63 @@ double2 evaluatePixel_Front(double2 outCoord, double2 srcSize) {
     return inCentered;
 }
 
-/* TODO Generate maps for 360fly */
-void gen_360fly_maps(configuration cfg, int** image_x, int** image_y) {
-	// TODO
+/* 1. Define cartesian plane
+ * 2. Reverse equirectangular projection from cartesian plane to polar coords in sphere
+ * 3. Stereographic projection of polar coords from sphere to plane 
+ * 4. Convert polar coords to cartesian coords in plane
+ * 5. Center and stretch according to source size
+ */
+double2 evaluatePixel_Equirectangular(double2 outPos, double2 srcSize) {
+		
+	double2 cartesianCoordsPlane;
+	polar3 polarCoordsSphere;
+	polar2 polarCoordsPlane;
+	double2 result;
+	
+	// Define cartesianCoordsPlane
+	cartesianCoordsPlane.x = 1.0 - outPos.x;
+	cartesianCoordsPlane.y = 1.0 - outPos.y;
+		
+	// Reverse equirectangular projection
+	// Convert cartesianCoordsPlane to polarCoordsSphere
+	polarCoordsSphere.theta = cartesianCoordsPlane.x * 2.0 * M_PI;
+	polarCoordsSphere.phi = cartesianCoordsPlane.y * M_PI/2.0 + M_PI/2.0;
+		
+	// Stereographic projection
+	// Convert polarCoordsSphere to polar coordinates on plane
+	polarCoordsPlane.r = sin(polarCoordsSphere.phi)/(1.0-cos(polarCoordsSphere.phi));
+	polarCoordsPlane.theta = polarCoordsSphere.theta;
+		
+	// Convert polarCoordsPlane to cartesian coordinates; center and stretch
+	result.x = (polarCoordsPlane.r * cos(polarCoordsPlane.theta) + 1.0)/2.0 * srcSize.x;
+	result.y = (polarCoordsPlane.r * sin(polarCoordsPlane.theta) + 1.0)/2.0 * srcSize.y;
+		
+	// Coordinates of pixel in input which should be mapped onto given pixel in output
+	return result;
 }
 
-/* Generate maps for front mode */
-void gen_front_maps(configuration cfg, int** image_x, int** image_y) {
-	int x,y;
-	printf("Front projection\n");
-  	for (y = 0; y < cfg.rows; y++) {
-    	for (x = 0; x < cfg.cols; x++) {
-      		double2 o = evaluatePixel_Front(
-      			(double2) {((double)x / (double)cfg.cols) * (cfg.width - 2 * cfg.crop),
-                           ((double)y / (double)cfg.rows) * (cfg.height - 2 * cfg.crop)}, 
-                (double2) {cfg.width - 2 * cfg.crop, cfg.height - (2 * cfg.crop)}
-            );
-      		image_x[y][x] = (int)round(o.x) + cfg.crop;
-      		image_y[y][x] = (int)round(o.y) + cfg.crop;
-    	}
-  	}
+/* Generate maps for equirectangular mode */
+void gen_maps(configuration cfg, int** image_x, int** image_y) {
+	int x, y;
+	for (y = 0; y < cfg.rows; y++) {
+		for (x = 0; x < cfg.cols; x++) {
+			double2 outPos = {(double)x / (double)cfg.cols,
+                              (double)y / (double)cfg.rows}; 
+			double2 srcSize = {cfg.width, cfg.height};
+			double2 o;
+			// TODO crop
+			// Map output pixel (x, y) to corresponding input pixel
+			switch (cfg.mode) {
+				case FRONT:				o = evaluatePixel_Front(outPos, srcSize); break;
+    			case EQUIRECTANGULAR:	o = evaluatePixel_Equirectangular(outPos, srcSize); break;
+      			default: 
+      				printf("Mode not implemented\n"); exit(1);
+    		}
+    		    		
+			image_x[y][x] = (int)round(o.x);
+			image_y[y][x] = (int)round(o.y);
+		}
+	}
 }
 
 /* Main */
@@ -333,15 +374,9 @@ int main (int argc, char **argv) {
     image_y = malloc((cfg.rows) * sizeof(*image_y));
     for (y = 0; y < (cfg.rows); y++) image_y[y]= malloc((cfg.cols) * sizeof(*(image_y[y])));
 
-	/* Generate the maps for given mode */
-	switch (cfg.mode) {
-    	case FRONT:    			gen_front_maps(cfg, image_x, image_y); break;
-      //case FRONT235: 			gen_front235_maps(cfg, image_x, image_y); break;
-      //case DOWN:    			gen_down_maps(cfg, image_x, image_y); break;
-      //case SAMSUNG_GEAR_360: 	gen_samsung_gear_360_maps(cfg,image_x,image_y); break;
-      //case THETAS: 			gen_thetas_maps(cfg,image_x,image_y); break;
-      	default: printf("Camera mode not implemented\n"); exit(1);
-    }
+	/* Generate the maps */
+	printf("Generating maps\n");
+	gen_maps(cfg, image_x, image_y);
 
 	/* Write files */
   	printf("Writing files\n");
