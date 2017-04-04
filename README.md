@@ -1,4 +1,4 @@
-# 360fly-remap
+# equirectangular-remap
 
 Generate maps for conversions from spherical to equirectangular video in [ffmpeg](http://ffmpeg.org).
 
