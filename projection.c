@@ -334,7 +334,7 @@ double2 evaluatePixel_Equirectangular(double2 outPos, double2 srcSize) {
 	return result;
 }
 
-/* Generate maps for equirectangular mode */
+/* Generate maps */
 void gen_maps(configuration cfg, int** image_x, int** image_y) {
 	int x, y;
 	for (y = 0; y < cfg.rows; y++) {
