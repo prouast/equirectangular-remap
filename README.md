@@ -2,7 +2,7 @@
 
 Generate maps for conversions from spherical to equirectangular video in [ffmpeg](http://ffmpeg.org).
 
-Works for videos which represent a half sphere - tested with [360fly](www.360fly.com).
+Works for videos which represent a half sphere - tested with [360fly](http://www.360fly.com).
 
 Adapted from the example given for ffmpeg's [`RemapFilter`](https://trac.ffmpeg.org/wiki/RemapFilter).
 
