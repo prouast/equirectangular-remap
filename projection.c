@@ -323,7 +323,7 @@ double2 evaluatePixel_Equirectangular(double2 outPos, double2 srcSize, double th
 
     // Reverse equirectangular projection
     // Convert cartesianCoordsPlane to polarCoordsSphere
-    polarCoordsSphere.theta = (cartesianCoordsPlane.x - thetaAdj) * 2.0 * M_PI;
+    polarCoordsSphere.theta = cartesianCoordsPlane.x * 2.0 * M_PI + thetaAdj * M_PI / 180.0;
     polarCoordsSphere.phi = cartesianCoordsPlane.y * M_PI/2.0 + M_PI/2.0;
 
     // Stereographic projection
